@@ -1,0 +1,67 @@
+/*
+ * PQCRSU_mlkem_mldsa.h
+ *
+ *  Created on: 19 apr. 2026
+ *      Author: Tomas Jonsson
+ */
+#pragma once
+
+#include "veinspqcsim/veinspqcsim.h"
+#include "veins/modules/application/ieee80211p/DemoBaseApplLayer.h"
+#include "veins/base/modules/BaseMobility.h"
+#include <oqs/oqs.h>
+namespace veinspqcsim {
+
+class VEINSPQCSIM_API PQCRSU_mlkem_mldsa : public veins::DemoBaseApplLayer
+{
+public:
+    void initialize( int stage ) override;
+    void finish() override;
+    void handleMessage( cMessage* msg ) override;
+    void onWSM( veins::BaseFrame1609_4* frame ) override;
+
+    enum class SigAlgo : int
+    {
+        None,
+        MLDSA_65,
+        SLH_DSA_192s,
+        SLH_DSA_192f
+    };
+
+    enum class KemAlgo : int
+    {
+        None,
+        MLKEM_768,
+        HQC_192
+    };
+
+protected:
+    cMessage* pubKeyTimer = nullptr;
+    simtime_t pubKeyInterval = 1.0;   // broadcast pubkey every N seconds
+    veins::Coord rsuPosition;
+
+    veins::BaseMobility* mobility;
+    // KEM for RSU
+    OQS_KEM* kem = nullptr; //kem instance pointer
+    OQS_SIG* sig = nullptr; //dsa instance pointer
+    std::vector<uint8_t> sigPublicKey;
+    std::vector<uint8_t> sigSecretKey;
+    std::vector<uint8_t> signature;
+    std::vector<uint8_t> kemPublicKey;
+    std::vector<uint8_t> kemSecretKey;
+    std::map<veins::LAddress::L2Type, std::vector<uint8_t>> sharedSecrets; //Map sender address to a shared secret
+    SigAlgo signatureAlgo;
+    KemAlgo kemAlgo;
+    void sendKEMPubKey();
+
+    cOutVector signTimeVec;
+    cOutVector verTimeVec;
+    cOutVector kpSigGenTimeVec;
+    cOutVector kpKemGenTimeVec;
+    cOutVector e2eDelayVec;
+    cOutVector networkDelayVec;
+    cOutVector decapsTimeVec;
+    cOutVector packetSizeVec;
+};
+
+}

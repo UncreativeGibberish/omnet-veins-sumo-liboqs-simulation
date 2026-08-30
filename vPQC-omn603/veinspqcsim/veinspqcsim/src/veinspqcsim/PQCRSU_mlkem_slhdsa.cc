@@ -1,0 +1,397 @@
+/*
+ * PQCRSU_mlkem_slhdsa.cc
+ *
+ *  Created on: 9 juni 2026
+ *      Author: Tomas Jonsson
+ */
+
+#include "PQCRSU_mlkem_slhdsa.h"
+
+#include "veinspqcsim/RSUKemPubKeyAnnouncement_mlkem_slhdsa_m.h"
+#include <oqs/oqs.h>
+#include <chrono>
+#include "PQCMessageWrapper_mlkem_slhdsa.h"
+#include "PQCRSUMessageWrapper_mlkem_slhdsa.h"
+
+using namespace veins;
+using namespace veinspqcsim;
+
+Define_Module(veinspqcsim::PQCRSU_mlkem_slhdsa);
+
+void PQCRSU_mlkem_slhdsa::initialize(int stage)
+{
+    DemoBaseApplLayer::initialize(stage);
+    if ( stage == 0 ) {
+
+        /*
+         *     cOutVector signTimeVec;
+    cOutVector verTimeVec;
+    cOutVector kpSigGenTimeVec;
+    cOutVector kpKemGenTimeVec;
+    cOutVector e2eDelayVec;
+    cOutVector networkDelayVec;
+    cOutVector decapsTimeVec;
+         */
+
+        // get position from mobility module
+        cModule* parent = getParentModule();
+        cModule* mobModule = parent->getSubmodule("mobility");   // exactly the name used in your .ini
+
+        if (mobModule) {
+            rsuPosition.x = mobModule->par("x").doubleValue();
+            rsuPosition.y = mobModule->par("y").doubleValue();
+            rsuPosition.z = mobModule->par("z").doubleValue();
+
+        }
+
+        signTimeVec.setName("rsuSigningTime");
+        verTimeVec.setName("rsuVerificationTime");
+        kpSigGenTimeVec.setName("signatureKeyPairGenTime");
+        kpKemGenTimeVec.setName("kemKeyPairGenTime");
+        e2eDelayVec.setName("rsuEndToEndDelay");
+        networkDelayVec.setName("networkDelay");
+        decapsTimeVec.setName("decapsulationTime");
+        packetSizeVec.setName("rsuAnnouncementSize");
+
+        // Check for kem algo
+        if ( par("kemAlgo").stdstringValue() == "MLKEM" ){
+            kemAlgo = KemAlgo::MLKEM_768;
+            // KEM Initialization for RSU
+            kem = OQS_KEM_new( OQS_KEM_alg_ml_kem_768 );
+
+            if ( kem == nullptr ) {
+                printf( "kem is null. Abandon all hope") ;
+                fflush(stdout);
+                EV_ERROR << "PQCRSU_mlkem_slhdsa: Failed to create ML-KEM-768 instance\n";
+
+            } else {
+                kemPublicKey.resize( kem->length_public_key );
+                kemSecretKey.resize( kem->length_secret_key );
+                auto kemKpStart = std::chrono::steady_clock::now();
+                OQS_STATUS status = OQS_KEM_keypair( kem,
+                                                    kemPublicKey.data(),
+                                                    kemSecretKey.data() );
+                auto kemKpEnd = std::chrono::steady_clock::now();
+                double kemKpGenTimeSec = std::chrono::duration<double>( kemKpEnd - kemKpStart ).count();
+                kpKemGenTimeVec.record( kemKpGenTimeSec );
+                if ( status == OQS_SUCCESS ) {
+                    EV_INFO << "PQCRSU_mlkem_slhdsa: ML-KEM-768 keypair generated successfully\n";
+                    EV_INFO << "   Public key size: " << kem->length_public_key << " bytes\n";
+                } else {
+                    EV_ERROR << "PQCRSU_mlkem_slhdsa: Failed to generate ML-KEM-768 keypair\n";
+                }
+            }
+        }
+
+
+        if( par("signatureAlgo").stdstringValue() == "SLHDSA"){
+            signatureAlgo = SigAlgo::SLH_DSA_192f;
+            // TODO: Add algo check
+
+            sig = OQS_SIG_new( OQS_SIG_alg_slh_dsa_pure_shake_192f );
+            if ( sig == nullptr) {
+                printf( "sig is null. Oof" );
+                fflush(stdout);
+            }
+            sigPublicKey.resize( sig->length_public_key );
+            sigSecretKey.resize( sig->length_secret_key );
+            signature.resize( sig->length_signature );
+
+            auto kpSigStart = std::chrono::steady_clock::now();
+
+            OQS_STATUS status = sig->keypair( sigPublicKey.data(), sigSecretKey.data() );
+
+            auto kpSigEnd = std::chrono::steady_clock::now();
+            double kpSigGenTimeSec = std::chrono::duration<double>( kpSigEnd - kpSigStart ).count();
+            kpSigGenTimeVec.record( kpSigGenTimeSec );
+
+            if( status == OQS_SUCCESS ){
+                EV_INFO << "PQCRSU_mlkem_slhdsa: SLH-DSA-shake-192f keypair generated successfully\n";
+                printf( "PQCRSU_mlkem_slhdsa: SLH-DSA-shake-192f keypair generated successfully\n" );
+            }
+            else{
+                EV_ERROR << "PQCRSU_mlkem_slhdsa: Failed to generate SLH-DSA-shake-192f keypair\n";
+                printf( "PQCRSU_mlkem_slhdsa: SLH-DSA-shake-192f keypair generated successfully\n" );
+            }
+
+            // Schedule broadcast of public key
+
+        }
+    } // stage 0
+
+    if( stage == 1 ){
+        pubKeyTimer = new cMessage( "rsuPubKeyTimer" );
+        //sendKEMPubKey();
+        scheduleAt( simTime() + 0.5, pubKeyTimer );
+    }
+}
+
+void PQCRSU_mlkem_slhdsa::finish()
+{
+    DemoBaseApplLayer::finish();
+}
+
+void PQCRSU_mlkem_slhdsa::onWSM( veins::BaseFrame1609_4* frame ){
+    EV_INFO << "RSU received wsm\n";
+    if( PQCMessageWrapper_mlkem_slhdsa* wsm = dynamic_cast<PQCMessageWrapper_mlkem_slhdsa*>( frame ) ){
+        simtime_t txTime = 0;
+        if( wsm->getSerial() > 0 ){
+            txTime = wsm->getLastTxTime();
+        }
+        else{
+            txTime = wsm->getGenerationTime();
+        }
+        //simtime_t msgGenTime = wsm->getGenerationTime();
+        double networkDelaySec = SIMTIME_DBL( simTime() - txTime );
+        networkDelayVec.record( networkDelaySec );
+
+        std::vector<uint8_t> tbs;
+
+        //Lambda functions for appending instance fields to tbs
+        auto append = [&]( const void* data, size_t len ) {
+            if ( data && len > 0 ) {
+                const uint8_t* p = static_cast<const uint8_t*>(data);
+                tbs.insert( tbs.end(), p, p + len );
+            }
+        };
+
+        auto appendDouble = [&](double d) {
+            uint64_t bits = __builtin_bswap64(*reinterpret_cast<const uint64_t*>(&d));
+            append(&bits, sizeof(bits));
+        };
+
+        //This order needs to be followed during verification as well
+        static const char* DOMAIN_SEPARATOR = "SLHDSA-MLKEM-V2X-SIM\0";
+        append( DOMAIN_SEPARATOR, std::strlen(DOMAIN_SEPARATOR) + 1 );
+
+        uint8_t messageId = wsm->getMessageId();
+        append( &messageId, sizeof( messageId ) );
+
+        veins::LAddress::L2Type senderAddr = wsm->getSenderAddress();
+        uint64_t sender_be = __builtin_bswap64( senderAddr );
+        append( &sender_be, sizeof( sender_be ) );
+
+        simtime_t genTime = wsm->getGenerationTime();
+        int64_t rawTime = genTime.raw(); // to restore simtime_t t = SimTime::fromRaw(rawTime)
+        uint64_t time_be = __builtin_bswap64( static_cast<uint64_t>(rawTime) );
+        append( &time_be, sizeof( time_be ) );
+
+        uint8_t sigType = wsm->getSigType();
+        append( &sigType, sizeof( sigType ) );
+
+        uint8_t kemType = wsm->getKemType();
+        append( &kemType, sizeof( kemType ) );
+
+        const uint8_t* receivedSignature = wsm->getSignatureBuffer();
+        size_t receivedSigLen = static_cast<size_t>( wsm->getSignatureArraySize() );
+
+        const uint8_t* receivedPubKey = wsm->getPubKeyBuffer();
+        size_t receivedPubKeyLen = static_cast<size_t>( wsm->getPubKeyArraySize() );
+        append( receivedPubKey, receivedPubKeyLen );
+
+        const uint8_t* receivedKemPubKey = wsm->getKemPublicKeyBuffer();
+        size_t receivedKemPubKeyLen = static_cast<size_t>( wsm->getKemPublicKeyArraySize() );
+
+        if( kemAlgo == KemAlgo::MLKEM_768 ){
+            append( receivedKemPubKey, receivedKemPubKeyLen );
+            const uint8_t* receivedCipher = wsm->getKemCipherBuffer();
+            size_t receivedCipherLen = static_cast<size_t>( wsm->getKemCiphertextArraySize() );
+            append( receivedCipher, receivedCipherLen );
+        }
+
+
+        // Payload
+        appendDouble( wsm->getLat() );
+        appendDouble( wsm->getLon() );
+        appendDouble( wsm->getHeading() );
+        appendDouble( wsm->getSpeed() );
+
+        std::string roadId = wsm->getRoadId();
+        uint16_t len_be = __builtin_bswap16( roadId.size() );
+        append( &len_be, sizeof( len_be ) );
+        append( roadId.data(), roadId.size() );
+        auto verTimeStart = std::chrono::steady_clock::now();
+        OQS_STATUS status = sig->verify(
+                tbs.data(),
+                tbs.size(),
+                receivedSignature,
+                receivedSigLen,
+                receivedPubKey);
+        auto verTimeEnd = std::chrono::steady_clock::now();
+        double verTimeSec = std::chrono::duration<double>( verTimeEnd - verTimeStart ).count();
+        verTimeVec.record( verTimeSec );
+
+        double carSignSec = wsm->getSigningTime();
+        double carEncapsSec = wsm->getEncapsTime();
+        if( status == OQS_SUCCESS ){
+            EV_INFO << "RSU successfuly verified message from stopped car\n";
+            std::vector<uint8_t> cText;
+            std::vector<uint8_t> sharedSecret;
+            const uint8_t* receivedCipher = wsm->getKemCipherBuffer();
+            //cText.resize( kem->length_ciphertext );
+            sharedSecret.resize( kem->length_shared_secret );
+
+
+            //(*decaps)(uint8_t *shared_secret, const uint8_t *ciphertext, const uint8_t *secret_key);
+            auto decapsStart = std::chrono::steady_clock::now();
+            OQS_STATUS dStatus = kem->decaps(
+                    sharedSecret.data(),
+                    receivedCipher,
+                    kemSecretKey.data()
+                    );
+            auto decapsEnd = std::chrono::steady_clock::now();
+            double decapsSec = std::chrono::duration<double>( decapsEnd - decapsStart ).count();
+            decapsTimeVec.record( decapsSec );
+            double e2eSec = networkDelaySec + carSignSec + carEncapsSec + verTimeSec + decapsSec;
+            e2eDelayVec.record( e2eSec );
+            if( dStatus == OQS_SUCCESS ){
+                EV_INFO << "RSU: Key decapsulation successful!\n";
+                sharedSecrets[senderAddr] = std::move( sharedSecret );
+            }
+            else{
+                EV_ERROR << "RSU: key decapsulation failed\n";
+            }
+
+        }
+        else{
+            EV_ERROR << "RSU failed to verify message from stopped car\n";
+        }
+    }
+
+}
+
+
+void PQCRSU_mlkem_slhdsa::handleMessage( cMessage* msg )
+{
+    if ( msg == pubKeyTimer ) {
+        sendKEMPubKey();
+        scheduleAt(simTime() + pubKeyInterval, pubKeyTimer);
+        return;
+    }
+
+    DemoBaseApplLayer::handleMessage(msg);
+}
+
+void PQCRSU_mlkem_slhdsa::sendKEMPubKey()
+{
+    EV_INFO << "=== PQCRSU_mlkem_slhdsa::sendKEMPubKey() called at t=" << simTime() << " ===" << endl;
+
+    if ( kem == nullptr ) {
+        return;
+    }
+
+    PQCRSUMessageWrapper_mlkem_slhdsa* announcement = new PQCRSUMessageWrapper_mlkem_slhdsa();
+
+    if( !announcement ){
+        printf("Failed to create PQCRSUMessageWrapper_mlkem_slhdsa instance. returning");
+        return;
+    }
+
+    DemoBaseApplLayer::populateWSM( announcement );
+
+    announcement->setSenderAddress( mac->getMACAddress() );
+
+    if( kemAlgo == KemAlgo::MLKEM_768 ){
+        announcement->setKemPublicKeyBulk( kemPublicKey.data(), kem->length_public_key );
+        announcement->setKemType( static_cast<int>( kemAlgo ) );
+    }
+
+    announcement->setPubKeyBulk( sigPublicKey.data(), sig->length_public_key );
+    announcement->setSigType( static_cast<int>( signatureAlgo ) );
+    announcement->setLat( rsuPosition.y );
+    announcement->setLon( rsuPosition.x );
+    announcement->setGenerationTime( simTime() );
+
+    std::vector<uint8_t> tbs;
+
+    auto append = [&]( const void* data, size_t len ) {
+        if ( data && len > 0 ) {
+            const uint8_t* p = static_cast<const uint8_t*>( data );
+            tbs.insert( tbs.end(), p, p + len );
+        }
+    };
+
+    auto appendDouble = [&]( double d ) {
+        uint64_t bits = __builtin_bswap64( *reinterpret_cast<const uint64_t*>( &d ) );
+        append( &bits, sizeof( bits ) );
+    };
+
+
+
+    static const char* DOMAIN_SEPARATOR = "SLHDSA-MLKEM-V2X-SIM\0";
+    append( DOMAIN_SEPARATOR, std::strlen(DOMAIN_SEPARATOR) + 1 );
+
+    uint8_t messageId = announcement->getMessageId();
+    append( &messageId, sizeof( messageId ) );
+
+    veins::LAddress::L2Type senderAddr = announcement->getSenderAddress();
+    uint64_t sender_be = __builtin_bswap64( senderAddr );
+    append( &sender_be, sizeof( sender_be ) );
+
+    simtime_t genTime = announcement->getGenerationTime();
+    int64_t rawTime = genTime.raw(); // to restore simtime_t t = SimTime::fromRaw(rawTime)
+    uint64_t time_be = __builtin_bswap64( static_cast<uint64_t>( rawTime ) );
+    append( &time_be, sizeof( time_be ) );
+
+    append( sigPublicKey.data(), sigPublicKey.size() );
+
+    if( kemAlgo == KemAlgo::MLKEM_768 ){
+        append( kemPublicKey.data(), kemPublicKey.size() );
+    }
+
+    uint8_t sigType = announcement->getSigType();
+    append( &sigType, sizeof( sigType ) );
+
+    uint8_t kemType = announcement->getKemType();
+    append( &kemType, sizeof( kemType ) );
+
+    appendDouble( announcement->getLat() );
+    appendDouble( announcement->getLon() );
+
+    size_t signatureLength = 0;
+    if( signatureAlgo == SigAlgo::SLH_DSA_192f ){
+        auto signStart = std::chrono::steady_clock::now();
+        OQS_STATUS status = sig->sign(
+                signature.data(),
+                &signatureLength,
+                tbs.data(),
+                tbs.size(),
+                sigSecretKey.data()
+                );
+        auto signEnd = std::chrono::steady_clock::now();
+        double signSec = std::chrono::duration<double>( signEnd - signStart ).count();
+        signTimeVec.record( signSec );
+        announcement->setSigningTime( signSec );
+        if( status != OQS_SUCCESS ){
+            EV_ERROR << "PQCRSU_mlkem_slhdsa: Message signing failed\n";
+            printf("PQCRSU_mlkem_slhdsa: Message signing failed\n");
+        }
+        else{
+            EV_INFO << "PQCRSU_mlkem_slhdsa: Message signing succeeded\n";
+            printf("PQCRSU_mlkem_slhdsa: Message signing succeeded\n");
+        }
+
+        announcement->setSignatureBulk( signature.data(), signatureLength );
+    }
+    EV_INFO << "PQCRSU_mlkem_slhdsa: about to sendDown RSU announcement at t=" << simTime() << endl;
+    printf("PQCRSU_mlkem_slhdsa: about to sendDown RSU announcement\n");
+
+    //Calculate and set bytelength for accurately simulated values
+    int64_t realLength = announcement->getByteLength();
+    realLength += announcement->getSignatureArraySize();
+    realLength += announcement->getPubKeyArraySize();
+    realLength += announcement->getKemPublicKeyArraySize();
+    announcement->setByteLength(realLength);
+
+    //Need this once
+    packetSizeVec.record( announcement->getByteLength() );
+
+    sendDown( announcement );
+
+    EV_INFO << "PQCRSU_mlkem_slhdsa: Broadcasted KEM public key\n";
+}
+
+
+
+
+
