@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<section name="Workbench">
+	<item key="filters_last_used" value=""/>
+	<section name="">
+		<item key="org.eclipse.search.resultpage.limit" value="1000"/>
+	</section>
+	<section name="org.eclipse.search.text.FileSearchResultPage">
+		<item key="org.eclipse.search.resultpage.limit" value="1000"/>
+	</section>
+	<section name="ReplaceDialog2">
+		<list key="replace_with">
+			<item value="ML-DSA-65"/>
+			<item value="SLH-DSA"/>
+			<item value="RSUKemPubKeyAnnouncement_mlkem_mldsa"/>
+			<item value="ML-DSA"/>
+			<item value="PQCRSUMessageWrapper_hqc_mldsa"/>
+			<item value="PQCMessageWrapper_hqc_mldsa"/>
+			<item value="RSUKemPubKeyAnnouncement_hqc_mldsa"/>
+		</list>
+	</section>
+	<section name="">
+		<item key="org.eclipse.search.resultpage.limit" value="1000"/>
+	</section>
+</section>

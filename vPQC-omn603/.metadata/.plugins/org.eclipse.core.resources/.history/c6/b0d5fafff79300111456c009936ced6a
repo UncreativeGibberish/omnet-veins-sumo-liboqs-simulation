@@ -1,0 +1,171 @@
+[General]
+cmdenv-express-mode = true
+cmdenv-autoflush = true
+cmdenv-status-frequency = 1s
+**.cmdenv-log-level = info
+ned-path = .;../../../veins/src
+image-path = ../../images
+
+network = Scenario
+outputvectormanager-class = "omnetpp::envir::SqliteOutputVectorManager"
+outputscalarmanager-class = "omnetpp::envir::SqliteOutputScalarManager"
+##########################################################
+#            Simulation parameters                       #
+##########################################################
+debug-on-errors = true
+print-undisposed = true
+
+sim-time-limit = 55s
+
+**.scalar-recording = true
+**.vector-recording = true
+
+
+
+# Random seeds and repetitions
+repeat = 30
+num-rngs = 4
+seed-set = ${repetition}
+*.manager.seed = ${repetition}
+
+
+*.playgroundSizeX = 4000m
+*.playgroundSizeY = 4000m
+*.playgroundSizeZ = 50m
+
+
+##########################################################
+# Annotation parameters                                  #
+##########################################################
+*.annotations.draw = true
+
+##########################################################
+# Obstacle parameters                                    #
+##########################################################
+*.obstacles.obstacles = xmldoc("config.xml", "//AnalogueModel[@type='SimpleObstacleShadowing']/obstacles")
+
+##########################################################
+#            TraCIScenarioManager parameters             #
+##########################################################
+*.manager.updateInterval = 1s
+*.manager.host = "localhost"
+*.manager.port = 9999
+*.manager.autoShutdown = true
+*.manager.launchConfig = xmldoc("erlangen.launchd.xml")
+
+##########################################################
+#            11p specific parameters                     #
+#                                                        #
+#                    NIC-Settings                        #
+##########################################################
+*.connectionManager.sendDirect = true
+*.connectionManager.maxInterfDist = 2600m
+*.connectionManager.drawMaxIntfDist = false
+
+*.**.nic.mac1609_4.useServiceChannel = false
+
+*.**.nic.mac1609_4.txPower = 20mW
+*.**.nic.mac1609_4.bitrate = 6Mbps
+*.**.nic.phy80211p.minPowerLevel = -110dBm
+
+*.**.nic.phy80211p.useNoiseFloor = true
+*.**.nic.phy80211p.noiseFloor = -98dBm
+
+*.**.nic.phy80211p.decider = xmldoc("config.xml")
+*.**.nic.phy80211p.analogueModels = xmldoc("config.xml")
+*.**.nic.phy80211p.usePropagationDelay = true
+
+*.**.nic.phy80211p.antenna = xmldoc("antenna.xml", "/root/Antenna[@id='monopole']")
+*.node[*].nic.phy80211p.antennaOffsetY = 0 m
+*.node[*].nic.phy80211p.antennaOffsetZ = 1.895 m
+
+**.nic.mac1609_4.stats = true
+**.nic.phy80211p.stats = true
+**.nic.phy80211p.collectCollisionStatistics = true
+
+
+
+
+##########################################################
+#                      RSU                               #
+##########################################################
+*.numRsus = 1
+*.rsu[0].mobility.x = 2000
+*.rsu[0].mobility.y = 2000
+*.rsu[0].mobility.z = 3
+# Keep these if you want the same defaults as the example
+*.rsu[*].appl.headerLength = 80 bit
+*.rsu[*].appl.sendBeacons = false
+*.rsu[*].appl.dataOnSch = false
+*.rsu[*].appl.beaconInterval = 1s
+
+
+##########################################################
+#                      Mobility                          #
+##########################################################
+*.node[*].veinsmobility.x = 0
+*.node[*].veinsmobility.y = 0
+*.node[*].veinsmobility.z = 0
+*.node[*].veinsmobility.setHostSpeed = false
+*.node[*0].veinsmobility.accidentCount = 1
+*.node[*0].veinsmobility.accidentStart = 20s
+*.node[*0].veinsmobility.accidentDuration = 20s
+*.node[*].appl.sendBeacons = false
+*.node[*].appl.dataOnSch = false
+*.node[*].appl.beaconInterval = 1s
+[Config Default]
+*.node[*].applType = "PQCBaseApplLayer_mlkem_mldsa"
+*.node[*].appl.kemAlgo = "MLKEM"
+*.node[*].appl.signatureAlgo = "MLDSA"
+#*.node[*].appl.headerLength = 80 bit
+*.node[*].appl.sendBeacons = false
+*.node[*].appl.dataOnSch = false
+*.node[*].appl.beaconInterval = 1s
+*.rsu[*].applType = "PQCRSU_mlkem_mldsa"
+*.rsu[0].appl.signatureAlgo = "MLDSA"
+*.rsu[0].appl.kemAlgo = "MLKEM"
+
+[Config MLKEM]
+*.node[*].appl.kemAlgo = "MLKEM"
+*.rsu[0].appl.kemAlgo = "MLKEM"
+
+[Config MLKEM_MLDSA]
+*.node[*].applType = "PQCBaseApplLayer_mlkem_mldsa"
+*.node[*].appl.kemAlgo = "MLKEM"
+*.node[*].appl.signatureAlgo = "MLDSA"
+*.rsu[*].applType = "PQCRSU_mlkem_mldsa"
+*.rsu[0].appl.kemAlgo = "MLKEM"
+*.rsu[0].appl.signatureAlgo = "MLDSA"
+
+[Config HQC_SLHDSA]
+*.node[*].applType = "PQCBaseApplLayer_hqc_slhsa"
+*.node[*].appl.kemAlgo = "HQC"
+*.node[*].appl.signatureAlgo = "SLHDSA"
+*.rsu[*].applType = "PQCRSU_hqc_slhdsa"
+*.rsu[0].appl.kemAlgo = "HQC"
+*.rsu[0].appl.signatureAlgo = "SLHDSA"
+
+[Config MLKEM_SLHDSA]
+*.node[*].applType = "PQCBaseApplLayer_mlkem_slhdsa"
+*.node[*].appl.kemAlgo = "MLKEM"
+*.node[*].appl.signatureAlgo = "SLHDSA"
+*.rsu[*].applType = "PQCRSU_mlkem_slhdsa"
+*.rsu[0].appl.kemAlgo = "MLKEM"
+*.rsu[0].appl.signatureAlgo = "SLHDSA"
+
+[Config HQC_MLDSA]
+*.node[*].applType = "PQCBaseApplLayer_hqc_mldsa"
+*.node[*].appl.kemAlgo = "HQC"
+*.node[*].appl.signatureAlgo = "MLDSA"
+*.rsu[*].applType = "PQCRSU_hqc_mldsa"
+*.rsu[0].appl.kemAlgo = "HQC"
+*.rsu[0].appl.signatureAlgo = "MLDSA"
+
+[Config WithBeaconing]
+*.node[*].appl.sendBeacons = true
+#*.rsu[*]appl.sendBeacons = true
+
+[Config WithChannelSwitching]
+*.**.nic.mac1609_4.useServiceChannel = true
+*.node[*].appl.dataOnSch = true
+
